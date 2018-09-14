@@ -8,8 +8,8 @@ Environment=RCLONE_CONFIG=/etc/rclone/rclone.conf
 ExecStart=/usr/bin/rclone mount gcrypt: /gdrive \
   --read-only \
   --allow-other \
-  --cache-db-purge \
   --dir-cache-time 160h \
+  --cache-dir /data/rclone/.cache \
   --cache-chunk-size 10M \
   --cache-info-age 168h \
   --cache-workers 8 \
