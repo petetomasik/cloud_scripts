@@ -4,7 +4,7 @@ After=network.target network-online.target
 
 [Service]
 Type=simple
-Environment=RCLONE_CONFIG=/root/.config/rclone/rclone.conf
+Environment=RCLONE_CONFIG=/etc/rclone/rclone.conf
 ExecStart=/usr/bin/rclone mount gcrypt: /gdrive \
   --read-only \
   --allow-other \
