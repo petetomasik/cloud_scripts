@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# Download Plex
+wget 'https://downloads.plex.tv/plex-media-server/1.13.5.5332-21ab172de/plexmediaserver_1.13.5.5332-21ab172de_amd64.deb'
+
+# Install Plex
+sudo dpkg -i plexmediaserver_1.13.5.5332-21ab172de_amd64.deb
+
+# Remove Installer
+rm plexmediaserver_1.13.5.5332-21ab172de_amd64.deb
+
+# Restart Plex Service
+sudo service plexmediaserver restart
+
+
+# Install Tautulli
+sudo apt-get install git-core python python-setuptools tzdata
+
+cd /opt
+sudo git clone https://github.com/Tautulli/Tautulli.git
+
+sudo adduser --system --no-create-home tautulli
+sudo chown tautulli:nogroup -R /opt/Tautulli
+
+
+# Install Netdata
+sudo apt-get install -y netdata

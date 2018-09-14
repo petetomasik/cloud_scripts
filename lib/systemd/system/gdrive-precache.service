@@ -1,0 +1,11 @@
+[Unit]
+Description=rclone precache service
+After=gdrive.mount
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c "/usr/bin/find /gdrive > /dev/null 2>&1"
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

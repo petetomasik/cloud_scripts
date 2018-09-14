@@ -1,0 +1,26 @@
+[Unit]
+Description=rclone mount service
+After=network.target network-online.target
+
+[Service]
+Type=simple
+Environment=RCLONE_CONFIG=/root/.config/rclone/rclone.conf
+ExecStart=/usr/bin/rclone mount gcrypt: /gdrive \
+  --read-only \
+  --allow-other \
+  --cache-db-purge \
+  --dir-cache-time 160h \
+  --cache-chunk-size 10M \
+  --cache-info-age 168h \
+  --cache-workers 8 \
+  --cache-chunk-total-size 1024G \
+  --buffer-size 0M \
+  --attr-timeout 1s \
+  --umask 002 \
+  --log-level INFO \
+  --log-file /var/log/rclone/gdrive-mount.log
+ExecStop=/bin/fusermount -uz /gdrive
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

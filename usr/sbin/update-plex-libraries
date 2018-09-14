@@ -1,0 +1,23 @@
+#!/bin/bash
+
+MOVIELIBRARY="/gdrive/Movies/"
+MOVIESECTION=1
+TVLIBRARY="/gdrive/TV Shows/"
+TVSECTION=2
+LOOKBACKDAYS=7
+
+export LD_LIBRARY_PATH=/usr/lib/plexmediaserver
+export PLEX_MEDIA_SERVER_APPLICATION_SUPPORT_DIR=/var/lib/plexmediaserver/Library/Application\ Support
+IFS=$'\n'
+
+for i in `find $TVLIBRARY -mtime -$LOOKBACKDAYS -type f -print0 | xargs -0 dirname | uniq`
+do
+	$LD_LIBRARY_PATH/Plex\ Media\ Scanner --scan --refresh --section $TVSECTION --directory "$i"
+done
+
+for i in `find $MOVIELIBRARY -mtime -$LOOKBACKDAYS -type f -print0 | xargs -0 dirname | uniq`
+do
+	$LD_LIBRARY_PATH/Plex\ Media\ Scanner --scan --refresh --section $MOVIESECTION --directory "$i"
+done
+
+exit
