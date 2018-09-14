@@ -13,7 +13,7 @@ ExecStart=/usr/bin/rclone mount gcrypt: /gdrive \
   --cache-chunk-size 10M \
   --cache-info-age 168h \
   --cache-workers 8 \
-  --cache-chunk-total-size 1024G \
+  --cache-chunk-total-size 30G \
   --buffer-size 0M \
   --attr-timeout 1s \
   --umask 002 \
