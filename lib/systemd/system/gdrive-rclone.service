@@ -9,7 +9,12 @@ ExecStart=/usr/bin/rclone mount gcrypt: /gdrive \
   --read-only \
   --allow-other \
   --dir-cache-time 160h \
+  --vfs-read-chunk-size 128M \
+  --vfs-read-chunk-size-limit off \
+  --fast-list \
   --cache-dir /data/rclone/.cache \
+  --cache-db-path /data/rclone/.cache \
+  --cache-chunk-path /data/rclone/.cache \
   --cache-chunk-size 10M \
   --cache-info-age 168h \
   --cache-workers 8 \
