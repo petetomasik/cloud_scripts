@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+
+from plexapi.myplex import MyPlexAccount
+from plexapi.server import PlexServer
+
+import os, socket
+import xml.etree.ElementTree
+
+plex_lib_dir = "/plex_libraries"
+tv_dir = ("%s/tv" %s plex_lib_dir)
+movies_dir = ("%s/movies" %s plex_lib_dir)
+
+prefs = xml.etree.ElementTree.parse('/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Preferences.xml').getroot()
+token = prefs.attrib['PlexOnlineToken']
+
+remoteplex_ip = socket.gethostbyname()
+
+localplex = PlexServer("http://127.0.0.1:32400",token)
+remoteplex = PlexServer(("http://%s:32400" % remoteplex_ip),token)
+
+try:
+    localplex.library.section('Movies')
+except:
+    print("'Movies' library not found, adding...")
+    # Add Movies library
+    localplex.library.add('Movies','movie','com.plexapp.agents.themoviedb','Plex Movie Scanner','/plex_libraries/movies','en')
+
+try:
+    localplex.library.section('TV Shows')
+except:
+    print("'TV Shows' library not found, adding...")
+    # Add TV Shows library
+    localplex.library.add('TV Shows','show','com.plexapp.agents.thetvdb','Plex Series Scanner','/plex_libraries/tv','en')
+
+try:
+    tv = remoteplex.library.section('TV Shows').recentlyAdded('episode',25)
+except:
+    print("Remote library 'TV Shows' not found!!!")
+    exit(1)
+else:
+    for episode in tv:
+        #print(vars(episode))
+        for media in episode.media:
+            #print(vars(media))
+            for parts in media.parts:
+                #print(vars(parts))
+                file_path = parts.file.split('/')
+                if not os.path.exists("%s/%s/%s" % (tv_dir,file_path[3],file_path[4])):
+                    os.makedirs("%s/%s/%s" % (tv_dir,file_path[3],file_path[4]), exist_ok=True)
+                if not os.path.exists("%s/%s/%s/%s" % (tv_dir,file_path[3],file_path[4],file_path[5])):
+                    os.symlink(parts.file,"%s/%s/%s/%s" % (tv_dir,file_path[3],file_path[4],file_path[5]))
+
+try:
+    movies = remoteplex.library.section('Movies').recentlyAdded()
+except:
+    print("Remote library 'Movies' not found!!!")
+    exit(1)
+else:
+    for movie in movies:
+        #print(vars(movie))
+        for media in movie.media:
+            #print(vars(media))
+            for parts in media.parts:
+                #print(vars(parts))
+                file_path = parts.file.split('/')
+                if not os.path.exists("%s/%s" % (movies_dir,file_path[3])):
+                    os.makedirs("%s/%s" % (movies_dir,file_path[3]), exist_ok=True)
+                if not os.path.exists("%s/%s/%s" % (movies_dir,file_path[3],file_path[4])):
+                    os.symlink(parts.file,"%s/%s/%s" % (movies_dir,file_path[3],file_path[4]))
+
+localplex.library.update()

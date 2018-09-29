@@ -1,0 +1,2 @@
+# m h dom mon dow user  command
+*/30 * * * * root /usr/sbin/setup-plex-libraries
