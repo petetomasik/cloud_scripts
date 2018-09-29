@@ -74,4 +74,9 @@ else:
                     except FileExistsError:
                         continue
 
-localplex.library.update()
+if not localplex.library.section('TV Shows').refreshing:
+    print("Updating 'TV Shows' library...")
+    localplex.library.section('TV Shows').update()
+if not localplex.library.section('Movies').refreshing:
+    print("Updating 'Movies' library...")
+    localplex.library.section('Movies').update()
