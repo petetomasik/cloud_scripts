@@ -23,17 +23,17 @@ try:
 except:
     print("'Movies' library not found, adding...")
     # Add Movies library
-    localplex.library.add('Movies','movie','com.plexapp.agents.themoviedb','Plex Movie Scanner','/plex_libraries/movies','en')
+    localplex.library.add('Movies','movie','com.plexapp.agents.themoviedb','Plex Movie Scanner',('%s' % movies_dir),'en')
 
 try:
     localplex.library.section('TV Shows')
 except:
     print("'TV Shows' library not found, adding...")
     # Add TV Shows library
-    localplex.library.add('TV Shows','show','com.plexapp.agents.thetvdb','Plex Series Scanner','/plex_libraries/tv','en')
+    localplex.library.add('TV Shows','show','com.plexapp.agents.thetvdb','Plex Series Scanner',('%s' % tv_dir),'en')
 
 try:
-    tv = remoteplex.library.section('TV Shows').recentlyAdded('episode',25)
+    tv = remoteplex.library.section('TV Shows').recentlyAdded(libtype='episode',maxresults=100)
 except:
     print("Remote library 'TV Shows' not found!!!")
     exit(1)
@@ -54,7 +54,7 @@ else:
                         continue
 
 try:
-    movies = remoteplex.library.section('Movies').recentlyAdded()
+    movies = remoteplex.library.section('Movies').recentlyAdded(maxresults=25)
 except:
     print("Remote library 'Movies' not found!!!")
     exit(1)
