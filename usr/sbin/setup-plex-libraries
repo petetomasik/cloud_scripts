@@ -3,7 +3,7 @@
 from plexapi.myplex import MyPlexAccount
 from plexapi.server import PlexServer
 
-import os, socket, yaml
+import os, socket, yaml, requests
 import xml.etree.ElementTree
 
 with open("/etc/_config.yaml", 'r') as yamlfile:
@@ -17,6 +17,11 @@ prefs = xml.etree.ElementTree.parse('/var/lib/plexmediaserver/Library/Applicatio
 token = prefs.attrib['PlexOnlineToken']
 
 remoteplex_ip = socket.gethostbyname(cfg['plex']['remote_host'])
+
+plex_token_headers = {'X-Plex-Token': token}
+plex_check = requests.get('http://localhost:32400/:/prefs', headers=plex_token_headers, timeout=2.0)
+while (plex_check.response_code != 200):
+    plex_check = requests.get('http://localhost:32400/:/prefs', headers=plex_token_headers, timeout=2.0)
 
 localplex = PlexServer("http://127.0.0.1:32400",token)
 remoteplex = PlexServer(("http://%s:32400" % remoteplex_ip),token)
