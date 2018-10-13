@@ -42,7 +42,7 @@ except:
     localplex.library.add('TV Shows','show','com.plexapp.agents.thetvdb','Plex Series Scanner',('%s' % tv_dir),'en')
 
 try:
-    tv = remoteplex.library.section('TV Shows').search(sort='originallyAvailableAt:desc',maxresults=10,libtype='episode')
+    tv = remoteplex.library.section('TV Shows').search(sort='originallyAvailableAt:desc',maxresults=5,libtype='episode')
 except:
     print("Remote library 'TV Shows' not found!!!")
     exit(1)
@@ -63,7 +63,7 @@ else:
                         continue
 
 try:
-    movies = remoteplex.library.section('Movies').search(sort='originallyAvailableAt:desc',maxresults=10,libtype='movie')
+    movies = remoteplex.library.section('Movies').search(sort='originallyAvailableAt:desc',maxresults=5,libtype='movie')
 except:
     print("Remote library 'Movies' not found!!!")
     exit(1)
