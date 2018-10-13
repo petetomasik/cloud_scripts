@@ -27,7 +27,7 @@ plex_token_headers = {'X-Plex-Token': cfg['plex']['token']}
 trakt_req = requests.get('http://localhost:32400/video/trakt/:/prefs/set?sync_idle_defer=false&scrobble_duplication_period=0&filter_networks=%2A&sync_idle_delay=0&start_scrobble=true&sync_ratings=0&sync_run_library=true&filter_sections=%2A&activity_mode=2&sync_clean_collection=false&sync_playback=1&sync_run_interval=1&sync_instant_actions=true&pin='+trakt_pin, headers=plex_token_headers)
 
 plex_check = requests.get('http://localhost:32400/:/prefs', headers=plex_token_headers, timeout=2.0)
-while (plex_check.response_code != 200):
+while (plex_check.status_code != 200):
     plex_check = requests.get('http://localhost:32400/:/prefs', headers=plex_token_headers, timeout=2.0)
 
 sync_from_trakt = requests.get('http://localhost:32400/video/trakt/sync/pull?account_id=1&t='+str(round(time.time(),1)), headers=plex_token_headers)
