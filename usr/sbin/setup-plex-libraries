@@ -21,6 +21,7 @@ remoteplex_ip = socket.gethostbyname(cfg['plex']['remote_host'])
 plex_token_headers = {'X-Plex-Token': token}
 plex_check = requests.get('http://localhost:32400/:/prefs', headers=plex_token_headers, timeout=2.0)
 while (plex_check.status_code != 200):
+    print("Waiting for plex server to be available...")
     plex_check = requests.get('http://localhost:32400/:/prefs', headers=plex_token_headers, timeout=2.0)
 
 localplex = PlexServer("http://127.0.0.1:32400",token)
