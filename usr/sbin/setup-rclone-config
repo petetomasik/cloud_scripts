@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+
+import requests, re, yaml
+from ConfigParser import ConfigParser
+
+with open("/etc/_config.yaml", 'r') as yamlfile:
+    cfg = yaml.load(yamlfile)
+
+config = ConfigParser()
+config.read('/etc/rclone/rclone.conf')
+
+config.set('gcrypt','password',cfg['rclone']['password'])
+config.set('gcrypt','password2',cfg['rclone']['password2'])
+config.set('gdrive','client_id',cfg['rclone']['client_id'])
+config.set('gdrive','client_secret',cfg['rclone']['client_secret'])
+config.set('gdrive','token',cfg['rclone']['token'])
+
+with open('/etc/rclone/rclone.conf', 'w') as configfile:
+    config.write(configfile)
