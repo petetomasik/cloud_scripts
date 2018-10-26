@@ -24,7 +24,7 @@ trakt_pin = pin_req.url.split('=')[1]
 
 plex_token_headers = {'X-Plex-Token': cfg['plex']['token']}
 
-trakt_req = requests.get(("http://localhost:32400/video/trakt/:/prefs/set?sync_idle_defer=false&scrobble_duplication_period=0&filter_networks=%2A&sync_idle_delay=0&start_scrobble=true&sync_ratings=0&sync_run_library=true&filter_sections=%2A&activity_mode=2&sync_clean_collection=false&sync_playback=1&sync_run_interval=1&sync_instant_actions=true&pin=%s&scrobble_names=%s" % (trakt_pin,cfg['plex']['username'])), headers=plex_token_headers)
+trakt_req = requests.get(("http://localhost:32400/video/trakt/:/prefs/set?sync_idle_defer=false&scrobble_duplication_period=0&filter_networks=*&sync_idle_delay=0&start_scrobble=true&sync_ratings=0&sync_run_library=true&filter_sections=*&activity_mode=2&sync_clean_collection=false&sync_playback=1&sync_run_interval=1&sync_instant_actions=true&pin=%s&scrobble_names=%s" % (trakt_pin,cfg['plex']['username'])), headers=plex_token_headers)
 
 plex_check = requests.get('http://localhost:32400/video/trakt/:/prefs', headers=plex_token_headers, timeout=2.0)
 while (plex_check.status_code != 200):
