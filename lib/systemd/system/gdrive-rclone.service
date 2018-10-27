@@ -8,22 +8,22 @@ Environment=RCLONE_CONFIG=/etc/rclone/rclone.conf
 ExecStart=/usr/bin/rclone mount gcrypt: /gdrive \
   --read-only \
   --allow-other \
-  --dir-cache-time 160h \
-  --vfs-read-chunk-size 128M \
-  --vfs-read-chunk-size-limit off \
+  --buffer-size=512M \
+  --dir-cache-time=120m \
   --fast-list \
-  --cache-dir /data/rclone/.cache \
-  --cache-db-path /data/rclone/.cache \
-  --cache-chunk-path /data/rclone/.cache \
-  --cache-chunk-size 10M \
-  --cache-info-age 168h \
-  --cache-workers 8 \
-  --cache-chunk-total-size 30G \
-  --buffer-size 0M \
-  --attr-timeout 1s \
-  --umask 002 \
-  --log-level INFO \
-  --log-file /var/log/rclone/gdrive-mount.log
+  --vfs-read-chunk-size=128M \
+  --vfs-read-chunk-size-limit=off \
+  --umask=002 \
+  --cache-dir=/data/rclone/.cache \
+  --cache-db-path=/data/rclone/.cache \
+  --cache-chunk-path=/data/rclone/.cache \
+  --cache-chunk-size=16M \
+  --cache-info-age=168h \
+  --cache-workers=8 \
+  --cache-chunk-total-size=16G \
+  --attr-timeout=1s \
+  --log-level=INFO \
+  --log-file=/var/log/rclone/gdrive-mount.log
 ExecStop=/bin/fusermount -uz /gdrive
 Restart=on-failure
 
