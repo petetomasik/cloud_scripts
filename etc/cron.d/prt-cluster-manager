@@ -1,3 +1,2 @@
 # m h dom mon dow user  command
-#DEBUG * * * * * root /opt/plex/cluster_manager >> /var/log/prt-cluster-manager.log 2>&1
-* * * * * root /opt/plex/cluster_manager
+* * * * * root /opt/plex/cluster_manager noop 2>&1 | logger -t prt-cluster-manager

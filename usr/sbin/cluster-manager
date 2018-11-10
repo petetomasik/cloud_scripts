@@ -1,0 +1,153 @@
+#!/usr/bin/env python
+
+import sys, getopt, requests, json, psutil, yaml, subprocess
+import logging
+import logging.handlers
+
+log = logging.getLogger('MyLogger')
+log.setLevel(logging.DEBUG)
+
+handler = logging.handlers.SysLogHandler(address = '/dev/log')
+log.addHandler(handler)
+
+with open("/etc/_config.yaml", 'r') as yamlfile:
+    cfg = yaml.load(yamlfile)
+
+base_url = 'https://api.vultr.com'
+headers = {"API-Key": ("%s" % cfg["vultr"]["api_key"])}
+
+DEV_MODE = True
+
+instance_names = cfg["vultr"]["instance_names"]
+
+launch_params = {
+        'DCID': cfg["vultr"]["launch_params"]["DCID"],
+        'VPSPLANID': cfg["vultr"]["launch_params"]["VPSPLANID"],
+        'OSID': cfg["vultr"]["launch_params"]["OSID"],
+        'SCRIPTID': cfg["vultr"]["launch_params"]["SCRIPTID"],
+        'NETWORKID': cfg["vultr"]["launch_params"]["NETWORKID"],
+        'SSHKEYID': cfg["vultr"]["launch_params"]["SSHKEYID"],
+        'FIREWALLGROUPID': cfg["vultr"]["launch_params"]["FIREWALLGROUPID"],
+        'tag': cfg["vultr"]["launch_params"]["tag"]
+        }
+
+destroy_params = {}
+
+def cluster_manager():
+    local_transcodes = 0
+    remote_transcodes = 0
+
+    log_message = {}
+    log_message["dev_mode"] = DEV_MODE
+
+    for proc in psutil.process_iter():
+        try:
+            if proc.name() == "ssh" and 'PLEX_MEDIA_SERVER' in ' '.join(proc.cmdline()) and 'plex@127.0.0.1' not in ' '.join(proc.cmdline()):
+                remote_transcodes += 1
+            if proc.name() == "plex_transcoder":
+                local_transcodes += 1
+        except psutil.NoSuchProcess:
+            pass
+
+    active_transcodes = local_transcodes+remote_transcodes
+    slaves_running = 0
+
+    vultr_server_list = requests.get(base_url+("/v1/server/list?tag=%s" % launch_params["tag"]),headers=headers)
+    if vultr_server_list.json():
+        for instance in vultr_server_list.json():
+            slaves_running += 1
+
+    if slaves_running >= 5:
+        log.critical("WARNING: %d VPS slaves detected!!! Max limit of 5!!!" % slaves_running)
+        exit(1)
+
+    log_message["local_transcodes"] = local_transcodes
+    log_message["remote_transcodes"] = remote_transcodes
+    log_message["vps_instances"] = slaves_running
+    log_message["transcode_slots_available"] = ((slaves_running+1)-active_transcodes)
+
+    launched_instance = False
+    destroyed_instance = False
+    if active_transcodes > slaves_running:
+        log_message["cluster_action"] = "create"
+        log.debug("Need to spin up instance, %d/%d transcode slots in use" % (active_transcodes,slaves_running+1))
+        for name in instance_names:
+            vultr_server_list = requests.get(base_url+("/v1/server/list?label=%s" % name),headers=headers)
+            if not vultr_server_list.json():
+                if not DEV_MODE:
+                    launch_params["hostname"] = name
+                    launch_params["label"] = name
+                    log.info("VPS creation params: %s" % launch_params)
+
+                    response = requests.post(base_url+"/v1/server/create",headers=headers,data=launch_params)
+                    if response.status_code == requests.codes.ok:
+                        launched_instance = True
+                        launched_instance_name = launch_params["hostname"]
+                        log.info("Launched: %s" % launched_instance_name)
+                        log.info("Response: %s" % response.text)
+                        break
+                else:
+                    log.info("[noop] Launched: %s" % name)
+                    break
+
+    elif (slaves_running-active_transcodes) >= 1:
+        log_message["cluster_action"] = "destroy"
+        log.debug("Need to destroy %d instances, %d/%d transcode slots in use" % (slaves_running-active_transcodes,active_transcodes,slaves_running+1))
+        vultr_server_list = requests.get(base_url+("/v1/server/list?tag=%s" % launch_params["tag"]),headers=headers)
+        if vultr_server_list.json():
+            for instance in vultr_server_list.json():
+                vps = vultr_server_list.json()[instance]
+                slave_running_transcode = False
+                for proc in psutil.process_iter():
+                    try:
+                        if proc.name() == "ssh" and ("%s@%s" % ("plex",vps["internal_ip"])) in ' '.join(proc.cmdline()) and 'PLEX_MEDIA_SERVER' in ' '.join(proc.cmdline()):
+                            log.warning("Slave (%s) found with running transcode, ABORT!!!" % vps["label"])
+                            slave_running_transcode = True
+                            break
+                    except psutil.NoSuchProcess:
+                        pass
+
+                if not slave_running_transcode:
+                    if not DEV_MODE:
+                        proc = subprocess.Popen(["consul", "force-leave", vps["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        proc.wait()
+
+                        log.info("Destroying instance: %s (%s)" % (vps["label"],vps["SUBID"]))
+                        destroy_params["SUBID"] = vps["SUBID"]
+                        response = requests.post(base_url+"/v1/server/destroy",headers=headers,data=destroy_params)
+                        if response.status_code == requests.codes.ok:
+                            log.info("INSTANCE DESTROYED: %s (%s)" % (vps["label"],vps["SUBID"]))
+                            proc = subprocess.Popen(["consul", "force-leave", vps["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            proc.wait()
+                            break
+                        else:
+                            log.error("Unable to destroy instance: %s (%s)" % (vps["label"],vps["SUBID"]))
+                            log.error("REASON: %s - %s" % (response.status_code,response.text))
+                    else:
+                        log.info("[noop] Destroying instance: %s (%s)" % (vps["label"],vps["SUBID"]))
+    else:
+        log_message["cluster_action"] = "none"
+
+    log.info(log_message)
+
+
+def get_cluster_nodes():
+    response = requests.get('http://localhost:8500/v1/catalog/service/prt_remote')
+    cluster_nodes = response.json()
+
+    print("%s %s %s" % ('127.0.0.1','51322','plex'))
+    for node in cluster_nodes:
+        print("%s %s %s" % (node["Address"],'51322','plex'))
+
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "get_cluster_nodes":
+            get_cluster_nodes()
+
+        if sys.argv[1] == "noop":
+            exit(0)
+
+    else:
+        get_cluster_nodes()
+        cluster_manager()
