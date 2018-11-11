@@ -1,0 +1,2 @@
+# m h dom mon dow user  command
+* * * * * root /usr/sbin/cluster-manager noop 2>&1 | logger -t cluster-manager

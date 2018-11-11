@@ -1,2 +1,0 @@
-# m h dom mon dow user  command
-* * * * * root /opt/plex/cluster_manager noop 2>&1 | logger -t prt-cluster-manager
