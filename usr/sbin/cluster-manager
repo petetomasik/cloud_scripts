@@ -17,6 +17,7 @@ base_url = 'https://api.vultr.com'
 headers = {"API-Key": ("%s" % cfg["vultr"]["api_key"])}
 
 DEV_MODE = True
+MAX_INSTANCES = 5
 
 instance_names = cfg["vultr"]["instance_names"]
 
@@ -33,31 +34,67 @@ launch_params = {
 
 destroy_params = {}
 
-def cluster_manager():
-    local_transcodes = 0
-    remote_transcodes = 0
-
-    log_message = {}
-    log_message["dev_mode"] = DEV_MODE
+def get_transcodes():
+    local_count = 0
+    remote_count = 0
 
     for proc in psutil.process_iter():
         try:
-            if proc.name() == "ssh" and 'PLEX_MEDIA_SERVER' in ' '.join(proc.cmdline()) and 'plex@127.0.0.1' not in ' '.join(proc.cmdline()):
-                remote_transcodes += 1
             if proc.name() == "plex_transcoder":
-                local_transcodes += 1
+                local_count += 1
+            if proc.name() == "ssh" and 'PLEX_MEDIA_SERVER' in ' '.join(proc.cmdline()) and 'plex@127.0.0.1' not in ' '.join(proc.cmdline()):
+                remote_count += 1
         except psutil.NoSuchProcess:
             pass
 
+    return local_count, remote_count
+
+
+def get_instance_list(search_params):
+    url = base_url+"/v1/server/list"
+    if search_params:
+        url += search_params
+    instance_list = requests.get(url,headers=headers)
+    return instance_list
+
+
+def create_instance(launch_params):
+    log.info("VPS creation params: %s" % launch_params)
+
+    response = requests.post(base_url+"/v1/server/create",headers=headers,data=launch_params)
+    if response.status_code == requests.codes.ok:
+        launched_instance = True
+        launched_instance_name = launch_params["hostname"]
+        log.info("Launched: %s" % launched_instance_name)
+        log.info("Response: %s" % response.text)
+
+
+def destroy_instance(vps_obj):
+    log.info("Destroying instance: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
+    destroy_params["SUBID"] = vps_obj["SUBID"]
+    response = requests.post(base_url+"/v1/server/destroy",headers=headers,data=destroy_params)
+    if response.status_code == requests.codes.ok:
+        log.info("INSTANCE DESTROYED: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
+        proc = subprocess.Popen(["consul", "force-leave", vps_obj["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc.wait()
+    else:
+        log.error("Unable to destroy instance: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
+        log.error("REASON: %s - %s" % (response.status_code,response.text))
+
+
+def cluster_manager():
+    log_message = {}
+    log_message["dev_mode"] = DEV_MODE
+
+    local_transcodes, remote_transcodes = get_transcodes()
     active_transcodes = local_transcodes+remote_transcodes
     slaves_running = 0
 
-    vultr_server_list = requests.get(base_url+("/v1/server/list?tag=%s" % launch_params["tag"]),headers=headers)
-    if vultr_server_list.json():
-        for instance in vultr_server_list.json():
-            slaves_running += 1
+    vultr_server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
+    for instance in vultr_server_list:
+        slaves_running += 1
 
-    if slaves_running >= 5:
+    if slaves_running >= MAX_INSTANCES:
         log.critical("WARNING: %d VPS slaves detected!!! Max limit of 5!!!" % slaves_running)
         exit(1)
 
@@ -72,20 +109,13 @@ def cluster_manager():
         log_message["cluster_action"] = "create"
         log.debug("Need to spin up instance, %d/%d transcode slots in use" % (active_transcodes,slaves_running+1))
         for name in instance_names:
-            vultr_server_list = requests.get(base_url+("/v1/server/list?label=%s" % name),headers=headers)
+            vultr_server_list = get_instance_list(("label=%s" % name))
             if not vultr_server_list.json():
                 if not DEV_MODE:
                     launch_params["hostname"] = name
                     launch_params["label"] = name
-                    log.info("VPS creation params: %s" % launch_params)
 
-                    response = requests.post(base_url+"/v1/server/create",headers=headers,data=launch_params)
-                    if response.status_code == requests.codes.ok:
-                        launched_instance = True
-                        launched_instance_name = launch_params["hostname"]
-                        log.info("Launched: %s" % launched_instance_name)
-                        log.info("Response: %s" % response.text)
-                        break
+                    create_instance(launch_params)
                 else:
                     log.info("[noop] Launched: %s" % name)
                     break
@@ -93,38 +123,27 @@ def cluster_manager():
     elif (slaves_running-active_transcodes) >= 1:
         log_message["cluster_action"] = "destroy"
         log.debug("Need to destroy %d instances, %d/%d transcode slots in use" % (slaves_running-active_transcodes,active_transcodes,slaves_running+1))
-        vultr_server_list = requests.get(base_url+("/v1/server/list?tag=%s" % launch_params["tag"]),headers=headers)
-        if vultr_server_list.json():
-            for instance in vultr_server_list.json():
-                vps = vultr_server_list.json()[instance]
-                slave_running_transcode = False
-                for proc in psutil.process_iter():
-                    try:
-                        if proc.name() == "ssh" and ("%s@%s" % ("plex",vps["internal_ip"])) in ' '.join(proc.cmdline()) and 'PLEX_MEDIA_SERVER' in ' '.join(proc.cmdline()):
-                            log.warning("Slave (%s) found with running transcode, ABORT!!!" % vps["label"])
-                            slave_running_transcode = True
-                            break
-                    except psutil.NoSuchProcess:
-                        pass
+        vultr_server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
+        for instance in vultr_server_list:
+            vps = json.loads(vultr_server_list)[instance]
+            slave_running_transcode = False
+            for proc in psutil.process_iter():
+                try:
+                    if proc.name() == "ssh" and ("%s@%s" % ("plex",vps["internal_ip"])) in ' '.join(proc.cmdline()) and 'PLEX_MEDIA_SERVER' in ' '.join(proc.cmdline()):
+                        log.warning("Slave (%s) found with running transcode, ABORT!!!" % vps["label"])
+                        slave_running_transcode = True
+                        break
+                except psutil.NoSuchProcess:
+                    pass
 
-                if not slave_running_transcode:
-                    if not DEV_MODE:
-                        proc = subprocess.Popen(["consul", "force-leave", vps["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                        proc.wait()
+            if not slave_running_transcode:
+                if not DEV_MODE:
+                    proc = subprocess.Popen(["consul", "force-leave", vps["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    proc.wait()
 
-                        log.info("Destroying instance: %s (%s)" % (vps["label"],vps["SUBID"]))
-                        destroy_params["SUBID"] = vps["SUBID"]
-                        response = requests.post(base_url+"/v1/server/destroy",headers=headers,data=destroy_params)
-                        if response.status_code == requests.codes.ok:
-                            log.info("INSTANCE DESTROYED: %s (%s)" % (vps["label"],vps["SUBID"]))
-                            proc = subprocess.Popen(["consul", "force-leave", vps["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                            proc.wait()
-                            break
-                        else:
-                            log.error("Unable to destroy instance: %s (%s)" % (vps["label"],vps["SUBID"]))
-                            log.error("REASON: %s - %s" % (response.status_code,response.text))
-                    else:
-                        log.info("[noop] Destroying instance: %s (%s)" % (vps["label"],vps["SUBID"]))
+                    destroy_instance(vps)
+                else:
+                    log.info("[noop] Destroying instance: %s (%s)" % (vps["label"],vps["SUBID"]))
     else:
         log_message["cluster_action"] = "none"
 
