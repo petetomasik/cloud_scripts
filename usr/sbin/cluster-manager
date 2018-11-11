@@ -97,7 +97,7 @@ def destroy_instance(vps_obj):
         # expiration in the next 5 minutes
         log.debug("Expiration in the NEXT 5 MINUTES...")
         if not DEV_MODE:
-            proc = subprocess.Popen(["consul", "force-leave", vps_obj["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            proc = subprocess.Popen(["/usr/sbin/consul", "force-leave", vps_obj["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             proc.wait()
             response = requests.post(base_url+"/v1/server/destroy",headers=headers,data=destroy_params)
             if response.status_code == requests.codes.ok:
