@@ -3,6 +3,7 @@
 import sys, getopt, requests, json, psutil, yaml, subprocess
 import logging
 import logging.handlers
+from datetime import datetime, timedelta
 
 log = logging.getLogger('MyLogger')
 log.setLevel(logging.DEBUG)
@@ -50,7 +51,7 @@ def get_transcodes():
     return local_count, remote_count
 
 
-def get_instance_list(search_params):
+def get_instance_list(search_params = None):
     url = base_url+"/v1/server/list"
     if search_params:
         url += search_params
@@ -72,14 +73,28 @@ def create_instance(launch_params):
 def destroy_instance(vps_obj):
     log.info("Destroying instance: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
     destroy_params["SUBID"] = vps_obj["SUBID"]
-    response = requests.post(base_url+"/v1/server/destroy",headers=headers,data=destroy_params)
-    if response.status_code == requests.codes.ok:
-        log.info("INSTANCE DESTROYED: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
-        proc = subprocess.Popen(["consul", "force-leave", vps_obj["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        proc.wait()
-    else:
-        log.error("Unable to destroy instance: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
-        log.error("REASON: %s - %s" % (response.status_code,response.text))
+
+    time_fmt = '%Y-%m-%d %H:%M:%S'
+    created_minute = datetime.strptime(vps_obj["date_created"], time_fmt).minute
+    time_now = datetime.strptime(now(), time_fmt)
+    one_hour_from_now = datetime.strptime(now(), time_fmt)
+    this_hour_expiry = time_now.replace(minute=created_minute)
+    next_hour_expiry = one_hour_from_now.replace(minute=created_minute)
+    seconds_until_this_hour_expiry = (this_hour_expiry-time_now).seconds
+    seconds_until_next_hour_expiry = (next_hour_expiry-time_now).seconds
+
+    if seconds_until_this_hour_expiry > 0:
+        # expiration this hour
+        if seconds_until_this_hour_expiry <= 300:
+            # expiration in the next 5 minutes
+            response = requests.post(base_url+"/v1/server/destroy",headers=headers,data=destroy_params)
+            if response.status_code == requests.codes.ok:
+                log.info("INSTANCE DESTROYED: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
+                proc = subprocess.Popen(["consul", "force-leave", vps_obj["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                proc.wait()
+            else:
+                log.error("Unable to destroy instance: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
+                log.error("REASON: %s - %s" % (response.status_code,response.text))
 
 
 def cluster_manager():
@@ -90,8 +105,8 @@ def cluster_manager():
     active_transcodes = local_transcodes+remote_transcodes
     slaves_running = 0
 
-    vultr_server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
-    for instance in vultr_server_list:
+    server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
+    for instance in server_list:
         slaves_running += 1
 
     if slaves_running >= MAX_INSTANCES:
@@ -109,8 +124,8 @@ def cluster_manager():
         log_message["cluster_action"] = "create"
         log.debug("Need to spin up instance, %d/%d transcode slots in use" % (active_transcodes,slaves_running+1))
         for name in instance_names:
-            vultr_server_list = get_instance_list(("label=%s" % name))
-            if not vultr_server_list.json():
+            server_list = get_instance_list(("label=%s" % name))
+            if not server_list.json():
                 if not DEV_MODE:
                     launch_params["hostname"] = name
                     launch_params["label"] = name
@@ -123,9 +138,9 @@ def cluster_manager():
     elif (slaves_running-active_transcodes) >= 1:
         log_message["cluster_action"] = "destroy"
         log.debug("Need to destroy %d instances, %d/%d transcode slots in use" % (slaves_running-active_transcodes,active_transcodes,slaves_running+1))
-        vultr_server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
-        for instance in vultr_server_list:
-            vps = json.loads(vultr_server_list)[instance]
+        server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
+        for instance in server_list:
+            vps = json.loads(server_list)[instance]
             slave_running_transcode = False
             for proc in psutil.process_iter():
                 try:
@@ -163,6 +178,9 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         if sys.argv[1] == "get_cluster_nodes":
             get_cluster_nodes()
+
+        if sys.argv[1] == "get_instance_list":
+            get_instance_list()
 
         if sys.argv[1] == "noop":
             exit(0)
