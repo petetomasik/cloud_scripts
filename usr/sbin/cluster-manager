@@ -54,47 +54,62 @@ def get_transcodes():
 def get_instance_list(search_params = None):
     url = base_url+"/v1/server/list"
     if search_params:
-        url += search_params
+        url += "?%s" % search_params
     instance_list = requests.get(url,headers=headers)
-    return instance_list
+    return instance_list.json()
 
 
 def create_instance(launch_params):
     log.info("VPS creation params: %s" % launch_params)
 
-    response = requests.post(base_url+"/v1/server/create",headers=headers,data=launch_params)
-    if response.status_code == requests.codes.ok:
-        launched_instance = True
-        launched_instance_name = launch_params["hostname"]
-        log.info("Launched: %s" % launched_instance_name)
-        log.info("Response: %s" % response.text)
+    server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
+    if len(server_list) >= MAX_INSTANCES:
+        log.critical("WARNING: %d VPS slaves detected!!! Max limit of 5!!!" % slaves_running)
+        exit(1)
+
+    if not DEV_MODE:
+        response = requests.post(base_url+"/v1/server/create",headers=headers,data=launch_params)
+        if response.status_code == requests.codes.ok:
+            launched_instance = True
+            launched_instance_name = launch_params["hostname"]
+            log.info("Launched: %s" % launched_instance_name)
+            log.info("Response: %s" % response.text)
+    else:
+        log.info("[noop] Launched: %s" % name)
 
 
 def destroy_instance(vps_obj):
-    log.info("Destroying instance: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
     destroy_params["SUBID"] = vps_obj["SUBID"]
 
     time_fmt = '%Y-%m-%d %H:%M:%S'
     created_minute = datetime.strptime(vps_obj["date_created"], time_fmt).minute
-    time_now = datetime.strptime(now(), time_fmt)
-    one_hour_from_now = datetime.strptime(now(), time_fmt)
+    time_now = datetime.strftime(datetime.now(), time_fmt)
+    time_now = datetime.strptime(time_now, time_fmt)
+    log.debug("created_minute: %d" % created_minute)
     this_hour_expiry = time_now.replace(minute=created_minute)
-    next_hour_expiry = one_hour_from_now.replace(minute=created_minute)
-    seconds_until_this_hour_expiry = (this_hour_expiry-time_now).seconds
-    seconds_until_next_hour_expiry = (next_hour_expiry-time_now).seconds
+    time_until_this_hour_expiry = this_hour_expiry-time_now
+    if time_until_this_hour_expiry.days < 0:
+        time_until_this_hour_expiry = timedelta(days=0, seconds=time_until_this_hour_expiry.seconds, microseconds=time_until_this_hour_expiry.microseconds)
+    seconds_until_this_hour_expiry = time_until_this_hour_expiry.seconds
+    log.debug("Seconds until expiry: %s" % seconds_until_this_hour_expiry)
 
-    if seconds_until_this_hour_expiry > 0:
-        # expiration this hour
-        if seconds_until_this_hour_expiry <= 300:
-            # expiration in the next 5 minutes
+    if seconds_until_this_hour_expiry <= 300:
+        # expiration in the next 5 minutes
+        log.debug("Expiration in the NEXT 5 MINUTES...")
+        if not DEV_MODE:
+            proc = subprocess.Popen(["consul", "force-leave", vps_obj["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            proc.wait()
             response = requests.post(base_url+"/v1/server/destroy",headers=headers,data=destroy_params)
             if response.status_code == requests.codes.ok:
                 log.info("INSTANCE DESTROYED: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
-                proc = subprocess.Popen(["consul", "force-leave", vps_obj["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                proc.wait()
             else:
                 log.error("Unable to destroy instance: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
                 log.error("REASON: %s - %s" % (response.status_code,response.text))
+        else:
+            log.info("[noop] INSTANCE DESTROYED: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
+    else:
+        # expiration in more than 5 minutes
+        log.debug("Instance not close to expiry, skipping destroy")
 
 
 def cluster_manager():
@@ -103,15 +118,9 @@ def cluster_manager():
 
     local_transcodes, remote_transcodes = get_transcodes()
     active_transcodes = local_transcodes+remote_transcodes
-    slaves_running = 0
 
     server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
-    for instance in server_list:
-        slaves_running += 1
-
-    if slaves_running >= MAX_INSTANCES:
-        log.critical("WARNING: %d VPS slaves detected!!! Max limit of 5!!!" % slaves_running)
-        exit(1)
+    slaves_running = len(server_list)
 
     log_message["local_transcodes"] = local_transcodes
     log_message["remote_transcodes"] = remote_transcodes
@@ -125,22 +134,20 @@ def cluster_manager():
         log.debug("Need to spin up instance, %d/%d transcode slots in use" % (active_transcodes,slaves_running+1))
         for name in instance_names:
             server_list = get_instance_list(("label=%s" % name))
-            if not server_list.json():
-                if not DEV_MODE:
-                    launch_params["hostname"] = name
-                    launch_params["label"] = name
+            if not server_list:
+                launch_params["hostname"] = name
+                launch_params["label"] = name
 
-                    create_instance(launch_params)
-                else:
-                    log.info("[noop] Launched: %s" % name)
-                    break
+                create_instance(launch_params)
+                break
 
     elif (slaves_running-active_transcodes) >= 1:
         log_message["cluster_action"] = "destroy"
         log.debug("Need to destroy %d instances, %d/%d transcode slots in use" % (slaves_running-active_transcodes,active_transcodes,slaves_running+1))
         server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
-        for instance in server_list:
-            vps = json.loads(server_list)[instance]
+        for subid in server_list:
+            vps = server_list[subid]
+            log.debug("vps object: %s" % vps)
             slave_running_transcode = False
             for proc in psutil.process_iter():
                 try:
@@ -152,13 +159,8 @@ def cluster_manager():
                     pass
 
             if not slave_running_transcode:
-                if not DEV_MODE:
-                    proc = subprocess.Popen(["consul", "force-leave", vps["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    proc.wait()
-
-                    destroy_instance(vps)
-                else:
-                    log.info("[noop] Destroying instance: %s (%s)" % (vps["label"],vps["SUBID"]))
+                destroy_instance(vps)
+                break
     else:
         log_message["cluster_action"] = "none"
 
@@ -186,5 +188,5 @@ if __name__ == '__main__':
             exit(0)
 
     else:
-        get_cluster_nodes()
         cluster_manager()
+        get_cluster_nodes()
