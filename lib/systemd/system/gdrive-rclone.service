@@ -4,6 +4,9 @@ After=network.target network-online.target
 
 [Service]
 Type=simple
+MemoryAccounting=true
+MemoryHigh=1024M
+MemoryMax=2048M
 Environment=RCLONE_CONFIG=/etc/rclone/rclone.conf
 ExecStart=/usr/bin/rclone mount gcrypt: /gdrive \
   --read-only \
