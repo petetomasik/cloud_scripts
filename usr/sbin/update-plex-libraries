@@ -12,12 +12,12 @@ IFS=$'\n'
 
 for i in `find $TVLIBRARY -mtime -$LOOKBACKDAYS -type f -print0 | xargs -0 dirname | uniq`
 do
-	$LD_LIBRARY_PATH/Plex\ Media\ Scanner --scan --refresh --section $TVSECTION --directory "$i" &
+	$LD_LIBRARY_PATH/Plex\ Media\ Scanner --scan --refresh --section $TVSECTION --directory "$i"
 done
 
 for i in `find $MOVIELIBRARY -mtime -$LOOKBACKDAYS -type f -print0 | xargs -0 dirname | uniq`
 do
-	$LD_LIBRARY_PATH/Plex\ Media\ Scanner --scan --refresh --section $MOVIESECTION --directory "$i" &
+	$LD_LIBRARY_PATH/Plex\ Media\ Scanner --scan --refresh --section $MOVIESECTION --directory "$i"
 done
 
 exit
