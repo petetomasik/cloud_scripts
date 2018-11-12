@@ -11,7 +11,7 @@ Environment=RCLONE_CONFIG=/etc/rclone/rclone.conf
 ExecStart=/usr/bin/rclone mount gcrypt: /gdrive \
   --read-only \
   --allow-other \
-  --buffer-size=512M \
+  --buffer-size=0M \
   --dir-cache-time=120m \
   --fast-list \
   --vfs-read-chunk-size=128M \
@@ -22,7 +22,7 @@ ExecStart=/usr/bin/rclone mount gcrypt: /gdrive \
   --cache-chunk-path=/data/rclone/.cache \
   --cache-chunk-size=16M \
   --cache-info-age=168h \
-  --cache-workers=8 \
+  --cache-workers=4 \
   --cache-chunk-total-size=16G \
   --attr-timeout=1s \
   --log-level=INFO \
