@@ -75,7 +75,7 @@ def create_instance(launch_params):
             log.info("Launched: %s" % launched_instance_name)
             log.info("Response: %s" % response.text)
     else:
-        log.info("[noop] Launched: %s" % name)
+        log.info("[noop] Launched: %s" % launched_instance_name)
 
 
 def destroy_instance(vps_obj):
