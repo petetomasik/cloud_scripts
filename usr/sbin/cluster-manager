@@ -67,11 +67,11 @@ def create_instance(launch_params):
         log.critical("WARNING: %d VPS slaves detected!!! Max limit of 5!!!" % slaves_running)
         exit(1)
 
+    launched_instance_name = launch_params["hostname"]
     if not DEV_MODE:
         response = requests.post(base_url+"/v1/server/create",headers=headers,data=launch_params)
         if response.status_code == requests.codes.ok:
             launched_instance = True
-            launched_instance_name = launch_params["hostname"]
             log.info("Launched: %s" % launched_instance_name)
             log.info("Response: %s" % response.text)
     else:
