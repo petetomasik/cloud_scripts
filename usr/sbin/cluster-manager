@@ -79,21 +79,25 @@ def create_instance(launch_params):
 
 
 def destroy_instance(vps_obj):
+    log.debug("vps object: %s" % vps_obj)
     destroy_params["SUBID"] = vps_obj["SUBID"]
 
     time_fmt = '%Y-%m-%d %H:%M:%S'
+    created_at = datetime.strptime(vps_obj["date_created"], time_fmt)
     created_minute = datetime.strptime(vps_obj["date_created"], time_fmt).minute
     time_now = datetime.strftime(datetime.now(), time_fmt)
     time_now = datetime.strptime(time_now, time_fmt)
     log.debug("created_minute: %d" % created_minute)
     this_hour_expiry = time_now.replace(minute=created_minute)
+    time_since_creation = time_now-created_at
+    log.debug("Time since creation: %s" % time_since_creation.seconds)
     time_until_this_hour_expiry = this_hour_expiry-time_now
     if time_until_this_hour_expiry.days < 0:
         time_until_this_hour_expiry = timedelta(days=0, seconds=time_until_this_hour_expiry.seconds, microseconds=time_until_this_hour_expiry.microseconds)
     seconds_until_this_hour_expiry = time_until_this_hour_expiry.seconds
     log.debug("Seconds until expiry: %s" % seconds_until_this_hour_expiry)
 
-    if seconds_until_this_hour_expiry <= 300:
+    if seconds_until_this_hour_expiry <= 300 and time_since_creation.seconds >= 600:
         # expiration in the next 5 minutes
         log.debug("Expiration in the NEXT 5 MINUTES...")
         if not DEV_MODE:
@@ -147,20 +151,19 @@ def cluster_manager():
         server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
         for subid in server_list:
             vps = server_list[subid]
-            log.debug("vps object: %s" % vps)
             slave_running_transcode = False
             for proc in psutil.process_iter():
                 try:
                     if proc.name() == "ssh" and ("%s@%s" % ("plex",vps["internal_ip"])) in ' '.join(proc.cmdline()) and 'PLEX_MEDIA_SERVER' in ' '.join(proc.cmdline()):
                         log.warning("Slave (%s) found with running transcode, ABORT!!!" % vps["label"])
                         slave_running_transcode = True
-                        break
+                        #break
                 except psutil.NoSuchProcess:
                     pass
 
             if not slave_running_transcode:
                 destroy_instance(vps)
-                break
+                #break
     else:
         log_message["cluster_action"] = "none"
 
