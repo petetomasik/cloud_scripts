@@ -4,6 +4,7 @@ import sys, getopt, requests, json, psutil, yaml, subprocess
 import logging
 import logging.handlers
 from datetime import datetime, timedelta
+import time
 
 log = logging.getLogger('MyLogger')
 log.setLevel(logging.DEBUG)
@@ -104,6 +105,7 @@ def destroy_instance(vps_obj):
             response = requests.post(base_url+"/v1/server/destroy",headers=headers,data=destroy_params)
             if response.status_code == requests.codes.ok:
                 log.info("INSTANCE DESTROYED: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
+                time.sleep(10)
                 proc = subprocess.Popen(["/usr/sbin/consul", "force-leave", vps_obj["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 proc.wait()
             else:
