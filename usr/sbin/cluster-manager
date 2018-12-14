@@ -5,6 +5,7 @@ import logging
 import logging.handlers
 from datetime import datetime, timedelta
 import time
+import os, fnmatch, subprocess, filecmp
 
 log = logging.getLogger('MyLogger')
 log.setLevel(logging.DEBUG)
@@ -19,9 +20,12 @@ base_url = 'https://api.vultr.com'
 headers = {"API-Key": ("%s" % cfg["vultr"]["api_key"])}
 
 DEV_MODE = True
-MAX_INSTANCES = 5
+MAX_INSTANCES = 1
 
 instance_names = cfg["vultr"]["instance_names"]
+
+TRANSCODE_SYNC_PATH = "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Cache/Transcode/Sync+"
+GDRIVE_SYNC_PATH = "/gdrive/Transcode/Sync+"
 
 launch_params = {
         'DCID': cfg["vultr"]["launch_params"]["DCID"],
@@ -35,6 +39,33 @@ launch_params = {
         }
 
 destroy_params = {}
+
+def check_sync_transcodes():
+    log.info("Checking transcode sync files...")
+
+    for root, dirs, files in os.walk(TRANSCODE_SYNC_PATH):
+        for name in files:
+            log.info(name)
+
+            if fnmatch.fnmatch(name, '*.mp4'):
+                sync_dir = root.split('/Transcode/Sync+/')[1]
+                try:
+                    os.makedirs("%s/%s" % (GDRIVE_SYNC_PATH,sync_dir))#, exist_ok=True)
+                except os.error: # Dir exists
+                    pass
+
+                log.info("Copying %s/%s to %s/%s/" % (root,name,GDRIVE_SYNC_PATH,sync_dir))
+                proc = subprocess.Popen(["cp", "%s/%s" % (root,name), "%s/%s/" % (GDRIVE_SYNC_PATH,sync_dir)])
+                proc.wait()
+
+                if filecmp.cmp("%s/%s" % (root,name),"%s/%s/%s" % (GDRIVE_SYNC_PATH,sync_dir,name)):
+                    log.info("File copied successfully")
+                    os.remove("%s/%s" % (root,name))
+                    proc = subprocess.Popen(["ln", "-s", "%s/%s/%s" % (GDRIVE_SYNC_PATH,sync_dir,name), "%s/%s" % (root,name)])
+                    proc.wait()
+                else:
+                    log.error("File copy failed!")
+
 
 def get_transcodes():
     local_count = 0
@@ -188,6 +219,9 @@ if __name__ == '__main__':
 
         if sys.argv[1] == "get_instance_list":
             get_instance_list()
+
+        if sys.argv[1] == "check_sync_transcodes":
+            check_sync_transcodes()
 
         if sys.argv[1] == "noop":
             exit(0)
