@@ -41,13 +41,12 @@ launch_params = {
 destroy_params = {}
 
 def check_sync_transcodes():
-    log.info("Checking transcode sync files...")
+    log.info("Checking for sync transcodes...")
 
     for root, dirs, files in os.walk(TRANSCODE_SYNC_PATH):
         for name in files:
-            log.info(name)
-
             if fnmatch.fnmatch(name, '*.mp4'):
+                log.info("Found sync transcode: %s" % name)
                 sync_dir = root.split('/Transcode/Sync+/')[1]
                 try:
                     os.makedirs("%s/%s" % (GDRIVE_SYNC_PATH,sync_dir))#, exist_ok=True)
