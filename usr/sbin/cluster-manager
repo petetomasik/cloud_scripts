@@ -95,7 +95,7 @@ def create_instance(launch_params):
 
     server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
     if len(server_list) >= MAX_INSTANCES:
-        log.critical("WARNING: %d VPS slaves detected!!! Max limit of 5!!!" % slaves_running)
+        log.critical("WARNING: %d VPS slaves detected!!! Max limit of %d!!!" % (slaves_running,MAX_INSTANCES))
         exit(1)
 
     launched_instance_name = launch_params["hostname"]
@@ -105,6 +105,9 @@ def create_instance(launch_params):
             launched_instance = True
             log.info("Launched: %s" % launched_instance_name)
             log.info("Response: %s" % response.text)
+        else:
+            log.error("Unable to create instance: %s" % launched_instance_name)
+            log.error("REASON: %s" % response.text)
     else:
         log.info("[noop] Launched: %s" % launched_instance_name)
 
