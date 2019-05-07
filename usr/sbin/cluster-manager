@@ -14,7 +14,7 @@ handler = logging.handlers.SysLogHandler(address = '/dev/log')
 log.addHandler(handler)
 
 with open("/etc/_config.yaml", 'r') as yamlfile:
-    cfg = yaml.load(yamlfile)
+    cfg = yaml.load(yamlfile, Loader=yaml.FullLoader)
 
 base_url = 'https://api.vultr.com'
 headers = {"API-Key": ("%s" % cfg["vultr"]["api_key"])}

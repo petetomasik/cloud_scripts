@@ -7,7 +7,7 @@ import os, socket, yaml, requests
 import xml.etree.ElementTree
 
 with open("/etc/_config.yaml", 'r') as yamlfile:
-    cfg = yaml.load(yamlfile)
+    cfg = yaml.load(yamlfile, Loader=yaml.FullLoader)
 
 plex_lib_dir = "/plex_libraries"
 tv_dir = ("%s/tv" % plex_lib_dir)
