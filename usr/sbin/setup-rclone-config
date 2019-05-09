@@ -4,7 +4,7 @@ import requests, re, yaml
 from configparser import ConfigParser
 
 with open("/etc/_config.yaml", 'r') as yamlfile:
-    cfg = yaml.load(yamlfile, Loader=yaml.FullLoader)
+    cfg = yaml.load(yamlfile)
 
 config = ConfigParser()
 config.read('/etc/rclone/rclone.conf')
