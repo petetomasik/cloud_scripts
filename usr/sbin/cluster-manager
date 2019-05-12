@@ -116,22 +116,10 @@ def destroy_instance(vps_obj):
     log.debug("vps object: %s" % vps_obj)
     destroy_params["SUBID"] = vps_obj["SUBID"]
 
-    time_fmt = '%Y-%m-%d %H:%M:%S'
-    created_at = datetime.strptime(vps_obj["date_created"], time_fmt)
-    created_minute = datetime.strptime(vps_obj["date_created"], time_fmt).minute
-    time_now = datetime.strftime(datetime.now(), time_fmt)
-    time_now = datetime.strptime(time_now, time_fmt)
-    log.debug("created_minute: %d" % created_minute)
-    this_hour_expiry = time_now.replace(minute=created_minute)
-    time_since_creation = time_now-created_at
-    log.debug("Time since creation: %s" % time_since_creation.seconds)
-    time_until_this_hour_expiry = this_hour_expiry-time_now
-    if time_until_this_hour_expiry.days < 0:
-        time_until_this_hour_expiry = timedelta(days=0, seconds=time_until_this_hour_expiry.seconds, microseconds=time_until_this_hour_expiry.microseconds)
-    seconds_until_this_hour_expiry = time_until_this_hour_expiry.seconds
-    log.debug("Seconds until expiry: %s" % seconds_until_this_hour_expiry)
+    date_created = int(time.mktime(time.strptime(vps_obj["date_created"], '%Y-%m-%d %H:%M:%S')))
+    seconds_elapsed_this_hour = (int(time.time())-date_created) % 3600
 
-    if seconds_until_this_hour_expiry <= 300 and time_since_creation.seconds >= 600:
+    if seconds_elapsed_this_hour >= 3300:
         # expiration in the next 5 minutes
         log.debug("Expiration in the NEXT 5 MINUTES...")
         if not DEV_MODE:
