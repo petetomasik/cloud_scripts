@@ -141,7 +141,7 @@ def destroy_instance(vps_obj):
             log.info("[noop] INSTANCE DESTROYED: %s (%s)" % (vps_obj["tags"][1],vps_obj["id"]))
     else:
         # expiration in more than 5 minutes
-        log.debug("Instance not close to expiry, skipping destroy")
+        log.debug("Instance not close to expiry (%d seconds), skipping destroy" % seconds_elapsed_this_hour)
 
 
 def cluster_manager():
