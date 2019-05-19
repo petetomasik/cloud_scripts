@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import sys, getopt, requests, json, psutil, yaml, subprocess
 import logging
@@ -17,7 +17,10 @@ with open("/etc/_config.yaml", 'r') as yamlfile:
     cfg = yaml.load(yamlfile)
 
 base_url = 'https://api.digitalocean.com/v2'
-headers = {"Authorization": ("Bearer %s" % cfg["digital_ocean"]["api_key"])}
+headers = {
+        "Authorization": ("Bearer %s" % cfg["digital_ocean"]["api_key"]),
+        "Content-Type": "application/json",
+        }
 
 DEV_MODE = True
 MAX_INSTANCES = 1
@@ -28,16 +31,16 @@ TRANSCODE_SYNC_PATH = "/var/lib/plexmediaserver/Library/Application Support/Plex
 GDRIVE_SYNC_PATH = "/gdrive/Transcode/Sync+"
 
 launch_params = {
-        'region': cfg["digital_ocean"]["launch_params"]["region"],
-        'size': cfg["digital_ocean"]["launch_params"]["size"],
-        'image': cfg["digital_ocean"]["launch_params"]["image"],
-        'ssh_keys': cfg["digital_ocean"]["launch_params"]["ssh_keys"],
-        'backups': cfg["digital_ocean"]["launch_params"]["backups"],
-        'ipv6': cfg["digital_ocean"]["launch_params"]["ipv6"],
-        'user_data': cfg["digital_ocean"]["launch_params"]["user_data"],
-        'private_networking': cfg["digital_ocean"]["launch_params"]["private_networking"],
-        'volumes': cfg["digital_ocean"]["launch_params"]["volumes"],
-        'tags': cfg["digital_ocean"]["launch_params"]["tags"],
+        "region": cfg["digital_ocean"]["launch_params"]["region"],
+        "size": cfg["digital_ocean"]["launch_params"]["size"],
+        "image": cfg["digital_ocean"]["launch_params"]["image"],
+        "ssh_keys": cfg["digital_ocean"]["launch_params"]["ssh_keys"],
+        "backups": cfg["digital_ocean"]["launch_params"]["backups"],
+        "ipv6": cfg["digital_ocean"]["launch_params"]["ipv6"],
+        "user_data": cfg["digital_ocean"]["launch_params"]["user_data"],
+        "private_networking": cfg["digital_ocean"]["launch_params"]["private_networking"],
+        "volumes": cfg["digital_ocean"]["launch_params"]["volumes"],
+        "tags": cfg["digital_ocean"]["launch_params"]["tags"],
         }
 
 destroy_params = {}
@@ -96,17 +99,20 @@ def create_instance(launch_params):
     log.info("VPS creation params: %s" % launch_params)
 
     server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
-    if len(server_list) >= MAX_INSTANCES:
+    if server_list["meta"]["total"] >= MAX_INSTANCES:
         log.critical("WARNING: %d VPS slaves detected!!! Max limit of %d!!!" % (slaves_running,MAX_INSTANCES))
         exit(1)
 
-    launched_instance_name = launch_params["hostname"]
+    launched_instance_name = launch_params["name"]
     if not DEV_MODE:
-        response = requests.post(base_url+"/droplets",headers=headers,data=launch_params)
-        if response.status_code == requests.codes.ok:
+        response = requests.post(base_url+"/droplets",headers=headers,data=json.dumps(launch_params))
+        if response.status_code == 202:
             launched_instance = True
             log.info("Launched: %s" % launched_instance_name)
             log.info("Response: %s" % response.text)
+            launched_response = response.json()
+            launched_vps_id = launched_response["droplet"]["id"]
+            response = requests.post(base_url+"/firewalls/%s/droplets" % cfg["digital_ocean"]["firewall"],headers=headers,data=json.dumps({"droplet_ids":[launched_vps_id]}))
         else:
             log.error("Unable to create instance: %s" % launched_instance_name)
             log.error("REASON: %s" % response.text)
@@ -148,9 +154,6 @@ def cluster_manager():
     local_transcodes, remote_transcodes = get_transcodes()
     active_transcodes = local_transcodes+remote_transcodes
 
-    server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
-    slaves_running = len(server_list)
-
     log_message["local_transcodes"] = local_transcodes
     log_message["remote_transcodes"] = remote_transcodes
     log_message["vps_instances"] = slaves_running
@@ -162,8 +165,8 @@ def cluster_manager():
         log_message["cluster_action"] = "create"
         log.debug("Need to spin up instance, %d/%d transcode slots in use" % (active_transcodes,slaves_running+1))
         for name in instance_names:
-            server_list = get_instance_list(("tag_name=%s" % name))
-            if not server_list:
+            server_details = get_instance_list(("tag_name=%s" % name))
+            if server_details["meta"]["total"] == 0:
                 launch_params["name"] = name
                 launch_params["tags"].append(name)
 
@@ -205,6 +208,9 @@ def get_cluster_nodes():
 
 
 if __name__ == '__main__':
+    server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
+    slaves_running = server_list["meta"]["total"]
+
     if len(sys.argv) > 1:
         if sys.argv[1] == "get_cluster_nodes":
             get_cluster_nodes()
