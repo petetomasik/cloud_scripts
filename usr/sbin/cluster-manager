@@ -43,8 +43,6 @@ launch_params = {
         "tags": cfg["digital_ocean"]["launch_params"]["tags"],
         }
 
-destroy_params = {}
-
 def check_sync_transcodes():
     log.info("Checking for sync transcodes...")
 
@@ -121,27 +119,26 @@ def create_instance(launch_params):
 
 
 def destroy_instance(vps_obj):
-    log.debug("vps object: %s" % vps_obj)
-    destroy_params["SUBID"] = vps_obj["SUBID"]
+    log.debug("VPS object: %s" % vps_obj)
 
-    date_created = int(time.mktime(time.strptime(vps_obj["date_created"], '%Y-%m-%d %H:%M:%S')))
+    date_created = int(time.mktime(time.strptime(vps_obj["created_at"], '%Y-%m-%dT%H:%M:%SZ')))
     seconds_elapsed_this_hour = (int(time.time())-date_created) % 3600
 
     if seconds_elapsed_this_hour >= 3300:
         # expiration in the next 5 minutes
         log.debug("Expiration in the NEXT 5 MINUTES...")
         if not DEV_MODE:
-            response = requests.delete(base_url+"/droplets",headers=headers,data=destroy_params)
-            if response.status_code == requests.codes.ok:
-                log.info("INSTANCE DESTROYED: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
+            response = requests.delete(base_url+"/droplets/%s" % vps_obj["id"],headers=headers)
+            if response.status_code == 204:
+                log.info("INSTANCE DESTROYED: %s (id: %s)" % (vps_obj["tags"][1],vps_obj["id"]))
                 time.sleep(10)
-                proc = subprocess.Popen(["/usr/sbin/consul", "force-leave", vps_obj["label"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                proc = subprocess.Popen(["/usr/sbin/consul", "force-leave", vps_obj["tags"][1]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 proc.wait()
             else:
-                log.error("Unable to destroy instance: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
+                log.error("Unable to destroy instance: %s (id: %s)" % (vps_obj["tags"][1],vps_obj["id"]))
                 log.error("REASON: %s - %s" % (response.status_code,response.text))
         else:
-            log.info("[noop] INSTANCE DESTROYED: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
+            log.info("[noop] INSTANCE DESTROYED: %s (%s)" % (vps_obj["tags"][1],vps_obj["id"]))
     else:
         # expiration in more than 5 minutes
         log.debug("Instance not close to expiry, skipping destroy")
@@ -176,14 +173,17 @@ def cluster_manager():
     elif (slaves_running-active_transcodes) >= 1:
         log_message["cluster_action"] = "destroy"
         log.debug("Need to destroy %d instances, %d/%d transcode slots in use" % (slaves_running-active_transcodes,active_transcodes,slaves_running+1))
-        server_list = get_instance_list(("tag_name=%s" % launch_params["tag"][0]))
-        for subid in server_list:
-            vps = server_list[subid]
+        server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
+        for vps in server_list["droplets"]:
+            for interface in vps["networks"]["v4"]:
+                if interface["type"] == "private":
+                    internal_ip = interface["ip_address"]
+
             slave_running_transcode = False
             for proc in psutil.process_iter():
                 try:
-                    if proc.name() == "ssh" and ("%s@%s" % ("plex",vps["internal_ip"])) in ' '.join(proc.cmdline()) and 'PLEX_MEDIA_SERVER' in ' '.join(proc.cmdline()):
-                        log.warning("Slave (%s) found with running transcode, ABORT!!!" % vps["label"])
+                    if proc.name() == "ssh" and ("%s@%s" % ("plex",internal_ip)) in ' '.join(proc.cmdline()) and 'PLEX_MEDIA_SERVER' in ' '.join(proc.cmdline()):
+                        log.warning("Slave (%s) found with running transcode, ABORT!!!" % vps["tags"][1])
                         slave_running_transcode = True
                         #break
                 except psutil.NoSuchProcess:
