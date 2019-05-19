@@ -16,26 +16,28 @@ log.addHandler(handler)
 with open("/etc/_config.yaml", 'r') as yamlfile:
     cfg = yaml.load(yamlfile)
 
-base_url = 'https://api.vultr.com'
-headers = {"API-Key": ("%s" % cfg["vultr"]["api_key"])}
+base_url = 'https://api.digitalocean.com/v2'
+headers = {"Authorization": ("Bearer %s" % cfg["digital_ocean"]["api_key"])}
 
 DEV_MODE = True
 MAX_INSTANCES = 1
 
-instance_names = cfg["vultr"]["instance_names"]
+instance_names = cfg["digital_ocean"]["instance_names"]
 
 TRANSCODE_SYNC_PATH = "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Cache/Transcode/Sync+"
 GDRIVE_SYNC_PATH = "/gdrive/Transcode/Sync+"
 
 launch_params = {
-        'DCID': cfg["vultr"]["launch_params"]["DCID"],
-        'VPSPLANID': cfg["vultr"]["launch_params"]["VPSPLANID"],
-        'OSID': cfg["vultr"]["launch_params"]["OSID"],
-        'SCRIPTID': cfg["vultr"]["launch_params"]["SCRIPTID"],
-        'NETWORKID': cfg["vultr"]["launch_params"]["NETWORKID"],
-        'SSHKEYID': cfg["vultr"]["launch_params"]["SSHKEYID"],
-        'FIREWALLGROUPID': cfg["vultr"]["launch_params"]["FIREWALLGROUPID"],
-        'tag': cfg["vultr"]["launch_params"]["tag"]
+        'region': cfg["digital_ocean"]["launch_params"]["region"],
+        'size': cfg["digital_ocean"]["launch_params"]["size"],
+        'image': cfg["digital_ocean"]["launch_params"]["image"],
+        'ssh_keys': cfg["digital_ocean"]["launch_params"]["ssh_keys"],
+        'backups': cfg["digital_ocean"]["launch_params"]["backups"],
+        'ipv6': cfg["digital_ocean"]["launch_params"]["ipv6"],
+        'user_data': cfg["digital_ocean"]["launch_params"]["user_data"],
+        'private_networking': cfg["digital_ocean"]["launch_params"]["private_networking"],
+        'volumes': cfg["digital_ocean"]["launch_params"]["volumes"],
+        'tags': cfg["digital_ocean"]["launch_params"]["tags"],
         }
 
 destroy_params = {}
@@ -83,7 +85,7 @@ def get_transcodes():
 
 
 def get_instance_list(search_params = None):
-    url = base_url+"/v1/server/list"
+    url = base_url+"/droplets"
     if search_params:
         url += "?%s" % search_params
     instance_list = requests.get(url,headers=headers)
@@ -93,14 +95,14 @@ def get_instance_list(search_params = None):
 def create_instance(launch_params):
     log.info("VPS creation params: %s" % launch_params)
 
-    server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
+    server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
     if len(server_list) >= MAX_INSTANCES:
         log.critical("WARNING: %d VPS slaves detected!!! Max limit of %d!!!" % (slaves_running,MAX_INSTANCES))
         exit(1)
 
     launched_instance_name = launch_params["hostname"]
     if not DEV_MODE:
-        response = requests.post(base_url+"/v1/server/create",headers=headers,data=launch_params)
+        response = requests.post(base_url+"/droplets",headers=headers,data=launch_params)
         if response.status_code == requests.codes.ok:
             launched_instance = True
             log.info("Launched: %s" % launched_instance_name)
@@ -123,7 +125,7 @@ def destroy_instance(vps_obj):
         # expiration in the next 5 minutes
         log.debug("Expiration in the NEXT 5 MINUTES...")
         if not DEV_MODE:
-            response = requests.post(base_url+"/v1/server/destroy",headers=headers,data=destroy_params)
+            response = requests.delete(base_url+"/droplets",headers=headers,data=destroy_params)
             if response.status_code == requests.codes.ok:
                 log.info("INSTANCE DESTROYED: %s (%s)" % (vps_obj["label"],vps_obj["SUBID"]))
                 time.sleep(10)
@@ -146,7 +148,7 @@ def cluster_manager():
     local_transcodes, remote_transcodes = get_transcodes()
     active_transcodes = local_transcodes+remote_transcodes
 
-    server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
+    server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
     slaves_running = len(server_list)
 
     log_message["local_transcodes"] = local_transcodes
@@ -160,10 +162,10 @@ def cluster_manager():
         log_message["cluster_action"] = "create"
         log.debug("Need to spin up instance, %d/%d transcode slots in use" % (active_transcodes,slaves_running+1))
         for name in instance_names:
-            server_list = get_instance_list(("label=%s" % name))
+            server_list = get_instance_list(("tag_name=%s" % name))
             if not server_list:
-                launch_params["hostname"] = name
-                launch_params["label"] = name
+                launch_params["name"] = name
+                launch_params["tags"].append(name)
 
                 create_instance(launch_params)
                 break
@@ -171,7 +173,7 @@ def cluster_manager():
     elif (slaves_running-active_transcodes) >= 1:
         log_message["cluster_action"] = "destroy"
         log.debug("Need to destroy %d instances, %d/%d transcode slots in use" % (slaves_running-active_transcodes,active_transcodes,slaves_running+1))
-        server_list = get_instance_list(("tag=%s" % launch_params["tag"]))
+        server_list = get_instance_list(("tag_name=%s" % launch_params["tag"][0]))
         for subid in server_list:
             vps = server_list[subid]
             slave_running_transcode = False
