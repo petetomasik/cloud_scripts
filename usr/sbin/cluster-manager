@@ -154,7 +154,7 @@ def cluster_manager():
     log_message["local_transcodes"] = local_transcodes
     log_message["remote_transcodes"] = remote_transcodes
     log_message["vps_instances"] = slaves_running
-    log_message["transcode_slots_available"] = ((slaves_running+1)-active_transcodes)
+    log_message["transcode_slots_available"] = (((slaves_running*2)+2)-active_transcodes)
 
     launched_instance = False
     destroyed_instance = False
@@ -170,7 +170,7 @@ def cluster_manager():
                 create_instance(launch_params,active_transcodes)
                 break
 
-    elif slaves_running-active_transcodes/2 > 0:
+    elif active_transcodes/2 < slaves_running:
         log_message["cluster_action"] = "destroy"
         log.debug("Need to destroy %d instances, %d/%d transcode slots in use" % (slaves_running-active_transcodes,active_transcodes,slaves_running+1))
         server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
