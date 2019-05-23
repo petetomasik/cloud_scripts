@@ -93,7 +93,7 @@ def get_instance_list(search_params = None):
     return instance_list.json()
 
 
-def create_instance(launch_params,active_transcodes):
+def create_instance(launch_params):
     log.info("VPS creation params: %s" % launch_params)
 
     server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
@@ -102,7 +102,7 @@ def create_instance(launch_params,active_transcodes):
         exit(1)
 
     launched_instance_name = launch_params["name"]
-    if not DEV_MODE and active_transcodes >= 2:
+    if not DEV_MODE:
         response = requests.post(base_url+"/droplets",headers=headers,data=json.dumps(launch_params))
         if response.status_code == 202:
             launched_instance = True
@@ -124,7 +124,7 @@ def destroy_instance(vps_obj,active_transcodes):
     date_created = int(time.mktime(time.strptime(vps_obj["created_at"], '%Y-%m-%dT%H:%M:%SZ')))
     seconds_elapsed_this_hour = (int(time.time())-date_created) % 3600
 
-    if seconds_elapsed_this_hour >= 3300 and active_transcodes < 2:
+    if seconds_elapsed_this_hour >= 3300:
         # expiration in the next 5 minutes
         log.debug("Expiration in the NEXT 5 MINUTES...")
         if not DEV_MODE:
@@ -158,21 +158,21 @@ def cluster_manager():
 
     launched_instance = False
     destroyed_instance = False
-    if active_transcodes/2 > slaves_running:
+    if active_transcodes//2 > slaves_running:
         log_message["cluster_action"] = "create"
-        log.debug("Need to spin up instance, %d/%d transcode slots in use" % (active_transcodes,slaves_running+1))
+        log.debug("Need to spin up instance, %d/%d transcode slots in use" % (active_transcodes,(slaves_running*2)+2))
         for name in instance_names:
             server_details = get_instance_list(("tag_name=%s" % name))
             if server_details["meta"]["total"] == 0:
                 launch_params["name"] = name
                 launch_params["tags"].append(name)
 
-                create_instance(launch_params,active_transcodes)
+                create_instance(launch_params)
                 break
 
-    elif active_transcodes/2 < slaves_running:
+    elif active_transcodes//2 < slaves_running:
         log_message["cluster_action"] = "destroy"
-        log.debug("Need to destroy %d instances, %d/%d transcode slots in use" % (slaves_running-active_transcodes,active_transcodes,slaves_running+1))
+        log.debug("Need to destroy %d instances, %d/%d transcode slots in use" % (slaves_running-(active_transcodes//2),active_transcodes,(slaves_running*2)+2))
         server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
         for vps in server_list["droplets"]:
             for interface in vps["networks"]["v4"]:
@@ -220,6 +220,11 @@ if __name__ == '__main__':
 
         if sys.argv[1] == "check_sync_transcodes":
             check_sync_transcodes()
+
+        if sys.argv[1] == "create_instance":
+            launch_params["name"] = sys.argv[2]
+            launch_params["tags"].append(sys.argv[2])
+            create_instance(launch_params)
 
         if sys.argv[1] == "noop":
             exit(0)
