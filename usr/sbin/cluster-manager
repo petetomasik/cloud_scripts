@@ -227,9 +227,10 @@ if __name__ == '__main__':
 
         if sys.argv[1] == "dev_mode":
             if sys.argv[2].lower() in ('true', 'false'):
+                sys.argv[2] = bool(True) if sys.argv[2].lower() == 'true' else bool(False)
                 with open("/etc/_config.yaml", 'r') as yamlfile:
                     cfg = yaml.load(yamlfile)
-                cfg["digital_ocean"]["dev_mode"] = sys.argv[2].lower()
+                cfg["digital_ocean"]["dev_mode"] = sys.argv[2]
                 with open("/etc/_config.yaml", 'w') as yamlfile:
                     yaml.dump(cfg, yamlfile, default_flow_style=False)
             else:
