@@ -13,7 +13,7 @@ log.setLevel(logging.DEBUG)
 handler = logging.handlers.SysLogHandler(address = '/dev/log')
 log.addHandler(handler)
 
-with open("/etc/_config.yaml", 'r') as yamlfile:
+with open("/etc/_config.yaml", 'r+') as yamlfile:
     cfg = yaml.load(yamlfile)
 
 base_url = 'https://api.digitalocean.com/v2'
@@ -22,10 +22,9 @@ headers = {
         "Content-Type": "application/json",
         }
 
-DEV_MODE = True
-MAX_INSTANCES = 1
-
-instance_names = cfg["digital_ocean"]["instance_names"]
+DEV_MODE = cfg["digital_ocean"]["dev_mode"]
+MAX_INSTANCES = cfg["digital_ocean"]["max_instances"]
+INSTANCE_NAMES = cfg["digital_ocean"]["instance_names"]
 
 TRANSCODE_SYNC_PATH = "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Cache/Transcode/Sync+"
 GDRIVE_SYNC_PATH = "/gdrive/Transcode/Sync+"
@@ -161,7 +160,7 @@ def cluster_manager():
     if active_transcodes//2 > slaves_running:
         log_message["cluster_action"] = "create"
         log.debug("Need to spin up instance, %d/%d transcode slots in use" % (active_transcodes,(slaves_running*2)+2))
-        for name in instance_names:
+        for name in INSTANCE_NAMES:
             server_details = get_instance_list(("tag_name=%s" % name))
             if server_details["meta"]["total"] == 0:
                 launch_params["name"] = name
@@ -225,6 +224,20 @@ if __name__ == '__main__':
             launch_params["name"] = sys.argv[2]
             launch_params["tags"].append(sys.argv[2])
             create_instance(launch_params)
+
+        if sys.argv[1] == "dev_mode":
+            with open("/etc/_config.yaml", 'r') as yamlfile:
+                cfg = yaml.load(yamlfile)
+            cfg["digital_ocean"]["dev_mode"] = sys.argv[2]
+            with open("/etc/_config.yaml", 'w') as yamlfile:
+                yaml.dump(cfg, yamlfile, default_flow_style=False)
+
+        if sys.argv[1] == "max_instances":
+            with open("/etc/_config.yaml", 'r') as yamlfile:
+                cfg = yaml.load(yamlfile)
+            cfg["digital_ocean"]["max_instances"] = sys.argv[2]
+            with open("/etc/_config.yaml", 'w') as yamlfile:
+                yaml.dump(cfg, yamlfile, default_flow_style=False)
 
         if sys.argv[1] == "noop":
             exit(0)
