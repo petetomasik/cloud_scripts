@@ -226,18 +226,24 @@ if __name__ == '__main__':
             create_instance(launch_params)
 
         if sys.argv[1] == "dev_mode":
-            with open("/etc/_config.yaml", 'r') as yamlfile:
-                cfg = yaml.load(yamlfile)
-            cfg["digital_ocean"]["dev_mode"] = sys.argv[2]
-            with open("/etc/_config.yaml", 'w') as yamlfile:
-                yaml.dump(cfg, yamlfile, default_flow_style=False)
+            if isinstance(sys.argv[2], bool):
+                with open("/etc/_config.yaml", 'r') as yamlfile:
+                    cfg = yaml.load(yamlfile)
+                cfg["digital_ocean"]["dev_mode"] = sys.argv[2]
+                with open("/etc/_config.yaml", 'w') as yamlfile:
+                    yaml.dump(cfg, yamlfile, default_flow_style=False)
+            else:
+                print("dev_mode can only be true/false")
 
         if sys.argv[1] == "max_instances":
-            with open("/etc/_config.yaml", 'r') as yamlfile:
-                cfg = yaml.load(yamlfile)
-            cfg["digital_ocean"]["max_instances"] = sys.argv[2]
-            with open("/etc/_config.yaml", 'w') as yamlfile:
-                yaml.dump(cfg, yamlfile, default_flow_style=False)
+            if isinstance(sys.argv[2], int):
+                with open("/etc/_config.yaml", 'r') as yamlfile:
+                    cfg = yaml.load(yamlfile)
+                cfg["digital_ocean"]["max_instances"] = sys.argv[2]
+                with open("/etc/_config.yaml", 'w') as yamlfile:
+                    yaml.dump(cfg, yamlfile, default_flow_style=False)
+            else:
+                print("'%s' is NOT an integer" % sys.argv[2])
 
         if sys.argv[1] == "noop":
             exit(0)
