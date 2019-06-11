@@ -23,7 +23,8 @@ headers = {
         }
 
 DEV_MODE = cfg["digital_ocean"]["dev_mode"]
-MAX_INSTANCES = cfg["digital_ocean"]["max_instances"]
+MAX_INSTANCES = int(cfg["digital_ocean"]["max_instances"])
+TRANSCODES_PER_INSTANCE = int(cfg["digital_ocean"]["transcodes_per_instance"])
 INSTANCE_NAMES = cfg["digital_ocean"]["instance_names"]
 
 TRANSCODE_SYNC_PATH = "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Cache/Transcode/Sync+"
@@ -153,13 +154,13 @@ def cluster_manager():
     log_message["local_transcodes"] = local_transcodes
     log_message["remote_transcodes"] = remote_transcodes
     log_message["vps_instances"] = slaves_running
-    log_message["transcode_slots_available"] = (((slaves_running*2)+2)-active_transcodes)
+    log_message["transcode_slots_available"] = (((slaves_running*TRANSCODES_PER_INSTANCE)+TRANSCODES_PER_INSTANCE)-active_transcodes)
 
     launched_instance = False
     destroyed_instance = False
-    if active_transcodes//2 > slaves_running:
+    if active_transcodes//TRANSCODES_PER_INSTANCE > slaves_running:
         log_message["cluster_action"] = "create"
-        log.debug("Need to spin up instance, %d/%d transcode slots in use" % (active_transcodes,(slaves_running*2)+2))
+        log.debug("Need to spin up instance, %d/%d transcode slots in use" % (active_transcodes,(slaves_running*TRANSCODES_PER_INSTANCE)+TRANSCODES_PER_INSTANCE))
         for name in INSTANCE_NAMES:
             server_details = get_instance_list(("tag_name=%s" % name))
             if server_details["meta"]["total"] == 0:
@@ -169,9 +170,9 @@ def cluster_manager():
                 create_instance(launch_params)
                 break
 
-    elif active_transcodes//2 < slaves_running:
+    elif active_transcodes//TRANSCODES_PER_INSTANCE < slaves_running:
         log_message["cluster_action"] = "destroy"
-        log.debug("Need to destroy %d instances, %d/%d transcode slots in use" % (slaves_running-(active_transcodes//2),active_transcodes,(slaves_running*2)+2))
+        log.debug("Need to destroy %d instances, %d/%d transcode slots in use" % (slaves_running-(active_transcodes//TRANSCODES_PER_INSTANCE),active_transcodes,(slaves_running*TRANSCODES_PER_INSTANCE)+TRANSCODES_PER_INSTANCE))
         server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
         for vps in server_list["droplets"]:
             for interface in vps["networks"]["v4"]:
