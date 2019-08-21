@@ -1,0 +1,246 @@
+#!/usr/bin/env python3
+
+import sys, getopt, requests, json, psutil, yaml, subprocess
+import logging
+import logging.handlers
+from datetime import datetime, timedelta
+import time
+import os, fnmatch, subprocess, filecmp
+
+log = logging.getLogger('MyLogger')
+log.setLevel(logging.DEBUG)
+
+handler = logging.handlers.SysLogHandler(address = '/dev/log')
+log.addHandler(handler)
+
+with open("/etc/_config.yaml", 'r+') as yamlfile:
+    cfg = yaml.load(yamlfile)
+
+base_url = 'https://api.digitalocean.com/v2'
+headers = {
+        "Authorization": ("Bearer %s" % cfg["digital_ocean"]["api_key"]),
+        "Content-Type": "application/json",
+        }
+
+DEV_MODE = cfg["digital_ocean"]["dev_mode"]
+MAX_INSTANCES = int(cfg["digital_ocean"]["max_instances"])
+TRANSCODES_PER_INSTANCE = int(cfg["digital_ocean"]["transcodes_per_instance"])
+INSTANCE_NAMES = cfg["digital_ocean"]["instance_names"]
+
+TRANSCODE_SYNC_PATH = "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Cache/Transcode/Sync+"
+GDRIVE_SYNC_PATH = "/gdrive/Transcode/Sync+"
+
+launch_params = {
+        "region": cfg["digital_ocean"]["launch_params"]["region"],
+        "size": cfg["digital_ocean"]["launch_params"]["size"],
+        "image": cfg["digital_ocean"]["launch_params"]["image"],
+        "ssh_keys": cfg["digital_ocean"]["launch_params"]["ssh_keys"],
+        "backups": cfg["digital_ocean"]["launch_params"]["backups"],
+        "ipv6": cfg["digital_ocean"]["launch_params"]["ipv6"],
+        "user_data": cfg["digital_ocean"]["launch_params"]["user_data"],
+        "private_networking": cfg["digital_ocean"]["launch_params"]["private_networking"],
+        "volumes": cfg["digital_ocean"]["launch_params"]["volumes"],
+        "tags": cfg["digital_ocean"]["launch_params"]["tags"],
+        }
+
+def check_sync_transcodes():
+    log.info("Checking for sync transcodes...")
+
+    for root, dirs, files in os.walk(TRANSCODE_SYNC_PATH):
+        for name in files:
+            if fnmatch.fnmatch(name, '*.mp4'):
+                log.info("Found sync transcode: %s" % name)
+                sync_dir = root.split('/Transcode/Sync+/')[1]
+                try:
+                    os.makedirs("%s/%s" % (GDRIVE_SYNC_PATH,sync_dir))#, exist_ok=True)
+                except os.error: # Dir exists
+                    pass
+
+                log.info("Copying %s/%s to %s/%s/" % (root,name,GDRIVE_SYNC_PATH,sync_dir))
+                proc = subprocess.Popen(["cp", "%s/%s" % (root,name), "%s/%s/" % (GDRIVE_SYNC_PATH,sync_dir)])
+                proc.wait()
+
+                if filecmp.cmp("%s/%s" % (root,name),"%s/%s/%s" % (GDRIVE_SYNC_PATH,sync_dir,name)):
+                    log.info("File copied successfully")
+                    os.remove("%s/%s" % (root,name))
+                    proc = subprocess.Popen(["ln", "-s", "%s/%s/%s" % (GDRIVE_SYNC_PATH,sync_dir,name), "%s/%s" % (root,name)])
+                    proc.wait()
+                else:
+                    log.error("File copy failed!")
+
+
+def get_transcodes():
+    url = "https://plex.cgxlea.tv/api/stats"
+    transcode_list = requests.get(url)
+    return transcode_list.json()
+
+
+def get_instance_list(search_params = None):
+    url = base_url+"/droplets"
+    if search_params:
+        url += "?%s" % search_params
+    instance_list = requests.get(url,headers=headers)
+    return instance_list.json()
+
+
+def create_instance(launch_params):
+    log.info("VPS creation params: %s" % launch_params)
+
+    server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
+    if server_list["meta"]["total"] >= MAX_INSTANCES:
+        log.critical("WARNING: %d VPS slaves detected!!! Max limit of %d!!!" % (slaves_running,MAX_INSTANCES))
+        exit(1)
+
+    launched_instance_name = launch_params["name"]
+    if not DEV_MODE:
+        response = requests.post(base_url+"/droplets",headers=headers,data=json.dumps(launch_params))
+        if response.status_code == 202:
+            launched_instance = True
+            log.info("Launched: %s" % launched_instance_name)
+            log.info("Response: %s" % response.text)
+            launched_response = response.json()
+            launched_vps_id = launched_response["droplet"]["id"]
+            response = requests.post(base_url+"/firewalls/%s/droplets" % cfg["digital_ocean"]["firewall"],headers=headers,data=json.dumps({"droplet_ids":[launched_vps_id]}))
+        else:
+            log.error("Unable to create instance: %s" % launched_instance_name)
+            log.error("REASON: %s" % response.text)
+    else:
+        log.info("[noop] Launched: %s" % launched_instance_name)
+
+
+def destroy_instance(vps_obj,active_transcodes):
+    log.debug("VPS object: %s" % vps_obj)
+
+    date_created = int(time.mktime(time.strptime(vps_obj["created_at"], '%Y-%m-%dT%H:%M:%SZ')))
+    seconds_elapsed_this_hour = (int(time.time())-date_created) % 3600
+
+    if seconds_elapsed_this_hour >= 3300:
+        # expiration in the next 5 minutes
+        log.debug("Expiration in the NEXT 5 MINUTES...")
+        if not DEV_MODE:
+            response = requests.delete(base_url+"/droplets/%s" % vps_obj["id"],headers=headers)
+            if response.status_code == 204:
+                log.info("INSTANCE DESTROYED: %s (id: %s)" % (vps_obj["tags"][1],vps_obj["id"]))
+                time.sleep(10)
+                proc = subprocess.Popen(["/usr/sbin/consul", "force-leave", vps_obj["tags"][1]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                proc.wait()
+            else:
+                log.error("Unable to destroy instance: %s (id: %s)" % (vps_obj["tags"][1],vps_obj["id"]))
+                log.error("REASON: %s - %s" % (response.status_code,response.text))
+        else:
+            log.info("[noop] INSTANCE DESTROYED: %s (%s)" % (vps_obj["tags"][1],vps_obj["id"]))
+    else:
+        # expiration in more than 5 minutes
+        log.debug("Instance not close to expiry (%d seconds), skipping destroy" % seconds_elapsed_this_hour)
+
+
+def cluster_manager():
+    log_message = {}
+    active_transcodes = 0
+    for transcoder in get_transcodes().items():
+        transcoder_instance, transcoder_details = transcoder
+        for session in transcoder_details["sessions"]:
+            if session["status"] == "TRANSCODE":
+                active_transcodes += 1
+            
+    log_message["dev_mode"] = DEV_MODE
+    log_message["active_transcodes"] = active_transcodes
+    log_message["vps_instances"] = slaves_running
+    log_message["transcode_slots_available"] = (((slaves_running*TRANSCODES_PER_INSTANCE)+TRANSCODES_PER_INSTANCE)-active_transcodes)
+
+    launched_instance = False
+    destroyed_instance = False
+    if active_transcodes//TRANSCODES_PER_INSTANCE > slaves_running:
+        log_message["cluster_action"] = "create"
+        log.debug("Need to spin up instance, %d/%d transcode slots in use" % (active_transcodes,(slaves_running*TRANSCODES_PER_INSTANCE)+TRANSCODES_PER_INSTANCE))
+        for name in INSTANCE_NAMES:
+            server_details = get_instance_list(("tag_name=%s" % name))
+            if server_details["meta"]["total"] == 0:
+                launch_params["name"] = name
+                launch_params["tags"].append(name)
+
+                create_instance(launch_params)
+                break
+
+    elif active_transcodes//TRANSCODES_PER_INSTANCE < slaves_running:
+        log_message["cluster_action"] = "destroy"
+        log.debug("Need to destroy %d instances, %d/%d transcode slots in use" % (slaves_running-(active_transcodes//TRANSCODES_PER_INSTANCE),active_transcodes,(slaves_running*TRANSCODES_PER_INSTANCE)+TRANSCODES_PER_INSTANCE))
+        server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
+        for vps in server_list["droplets"]:
+            for interface in vps["networks"]["v4"]:
+                if interface["type"] == "private":
+                    internal_ip = interface["ip_address"]
+
+            slave_running_transcode = False
+            #TODO get transcode_instance list, check if transcode_ip has an active session in sessions[]
+            for transcoder in get_transcodes().items():
+                transcoder_instance, transcoder_details = transcoder
+                for session in transcoder_details["sessions"]:
+                    if session["status"] == "TRANSCODE" and transcoder_instance == ("http://%s:3000" % internal_ip):
+                        log.warning("Slave (%s) found with running transcode, ABORT!!!" % transcoder_instance)
+                        slave_running_transcode = True
+     
+            if not slave_running_transcode:
+                destroy_instance(vps,active_transcodes)
+
+    else:
+        log_message["cluster_action"] = "none"
+
+    log.info(log_message)
+
+
+def get_cluster_nodes():
+    response = requests.get('http://localhost:8500/v1/catalog/service/prt_remote')
+    cluster_nodes = response.json()
+
+    print("%s %s %s" % ('127.0.0.1','51322','plex'))
+    for node in cluster_nodes:
+        print("%s %s %s" % (node["Address"],'51322','plex'))
+
+
+if __name__ == '__main__':
+    server_list = get_instance_list(("tag_name=%s" % launch_params["tags"][0]))
+    slaves_running = server_list["meta"]["total"]
+
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "get_cluster_nodes":
+            get_cluster_nodes()
+
+        if sys.argv[1] == "get_instance_list":
+            get_instance_list()
+
+        if sys.argv[1] == "check_sync_transcodes":
+            check_sync_transcodes()
+
+        if sys.argv[1] == "create_instance":
+            launch_params["name"] = sys.argv[2]
+            launch_params["tags"].append(sys.argv[2])
+            create_instance(launch_params)
+
+        if sys.argv[1] == "dev_mode":
+            if sys.argv[2].lower() in ('true', 'false'):
+                sys.argv[2] = bool(True) if sys.argv[2].lower() == 'true' else bool(False)
+                with open("/etc/_config.yaml", 'r') as yamlfile:
+                    cfg = yaml.load(yamlfile)
+                cfg["digital_ocean"]["dev_mode"] = sys.argv[2]
+                with open("/etc/_config.yaml", 'w') as yamlfile:
+                    yaml.dump(cfg, yamlfile, default_flow_style=False)
+            else:
+                print("dev_mode can only be true/false")
+
+        if sys.argv[1] == "max_instances":
+            if isinstance(sys.argv[2], int):
+                with open("/etc/_config.yaml", 'r') as yamlfile:
+                    cfg = yaml.load(yamlfile)
+                cfg["digital_ocean"]["max_instances"] = sys.argv[2]
+                with open("/etc/_config.yaml", 'w') as yamlfile:
+                    yaml.dump(cfg, yamlfile, default_flow_style=False)
+            else:
+                print("'%s' is NOT an integer" % sys.argv[2])
+
+        if sys.argv[1] == "noop":
+            exit(0)
+
+    else:
+        cluster_manager()
+        #get_cluster_nodes()
