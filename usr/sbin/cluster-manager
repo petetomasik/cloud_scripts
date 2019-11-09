@@ -128,6 +128,13 @@ def destroy_instance(vps_obj,active_transcodes):
         # expiration in the next 5 minutes
         log.debug("Expiration in the NEXT 5 MINUTES...")
         if not DEV_MODE:
+            for interface in vps_obj["networks"]["v4"]:
+                if interface["type"] == "private":
+                    internal_ip = interface["ip_address"]
+
+            proc = subprocess.Popen(["ssh", "%s@%s" % ("plex", internal_ip), "-p", "51322", "/bin/systemctl", "stop" "consul.service"], stdout=subprocess.PIPE)
+            proc.wait()
+            time.sleep(10)
             response = requests.delete(base_url+"/droplets/%s" % vps_obj["id"],headers=headers)
             if response.status_code == 204:
                 log.info("INSTANCE DESTROYED: %s (id: %s)" % (vps_obj["tags"][1],vps_obj["id"]))
