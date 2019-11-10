@@ -30,6 +30,7 @@ plex_check = requests.get('http://localhost:32400/video/trakt/:/prefs', headers=
 while (plex_check.status_code != 200):
     print("Waiting for trakt plugin to be available...")
     plex_check = requests.get('http://localhost:32400/video/trakt/:/prefs', headers=plex_token_headers, timeout=2.0)
+    time.sleep(1)
 
 time.sleep(10)
 sync_from_trakt = requests.get('http://localhost:32400/video/trakt/sync/pull?account_id=1&t='+str(round(time.time(),1)), headers=plex_token_headers)
